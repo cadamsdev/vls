@@ -30,17 +30,37 @@ fn (mut app App) operation_at_pos(method Method, request Request) Response {
 	}
 }
 
-fn (mut app App) on_did_open(request Request) {
+fn (mut app App) on_did_open(request Request) ?Notification {
 	uri := request.params.text_document.uri
 	log('on_did_open: ${uri}')
 	real_path := uri_to_path(uri)
 	content := os.read_file(real_path) or {
 		log('Failed to read file ${real_path}: ${err}')
-		return
+		return none
 	}
 	app.open_files[uri] = content
 	app.text = content
 	log('STORED CONTENT for uri=${uri}, FILE COUNT: ${app.open_files.len}')
+	// Run diagnostics immediately so errors are visible without a first edit
+	v_errors := app.run_v_check(uri, content)
+	log('on_did_open run_v_check errors:${v_errors}')
+	mut diagnostics := []LSPDiagnostic{}
+	mut seen_positions := map[string]bool{}
+	for v_err in v_errors {
+		pos_key := '${v_err.line_nr}:${v_err.col}'
+		if pos_key in seen_positions {
+			continue
+		}
+		seen_positions[pos_key] = true
+		diagnostics << v_error_to_lsp_diagnostic(v_err)
+	}
+	return Notification{
+		method: 'textDocument/publishDiagnostics'
+		params: PublishDiagnosticsParams{
+			uri:         uri
+			diagnostics: diagnostics
+		}
+	}
 }
 
 // Returns instant red wavy errors

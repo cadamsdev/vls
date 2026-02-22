@@ -228,6 +228,70 @@ fn test_on_did_open_reopen_same_file() {
 	assert app.open_files[uri] == content2
 }
 
+fn test_on_did_open_returns_diagnostics_for_valid_file() {
+	mut app := create_test_app()
+	defer {
+		cleanup_test_app(app)
+	}
+
+	test_dir := os.join_path(app.temp_dir, 'project')
+	os.mkdir_all(test_dir) or { panic(err) }
+	test_file := os.join_path(test_dir, 'test.v')
+	valid_content := "module main\n\nfn main() {\n\tprintln('hello')\n}\n"
+	os.write_file(test_file, valid_content) or { panic(err) }
+
+	uri := path_to_uri(test_file)
+	result := app.on_did_open(Request{
+		params: Params{
+			text_document: TextDocumentIdentifier{
+				uri: uri
+			}
+		}
+	})
+
+	// A notification must always be returned (even with zero diagnostics for valid code)
+	if notif := result {
+		assert notif.method == 'textDocument/publishDiagnostics'
+		assert notif.params.uri == uri
+		// Valid file should have no diagnostics
+		assert notif.params.diagnostics.len == 0
+	} else {
+		assert false, 'on_did_open should always return a publishDiagnostics notification'
+	}
+}
+
+fn test_on_did_open_returns_diagnostics_for_invalid_file() {
+	mut app := create_test_app()
+	defer {
+		cleanup_test_app(app)
+	}
+
+	test_dir := os.join_path(app.temp_dir, 'project')
+	os.mkdir_all(test_dir) or { panic(err) }
+	test_file := os.join_path(test_dir, 'broken.v')
+	// Deliberate syntax error: unclosed function parameter list
+	broken_content := 'module main\n\nfn main( {\n}\n'
+	os.write_file(test_file, broken_content) or { panic(err) }
+
+	uri := path_to_uri(test_file)
+	result := app.on_did_open(Request{
+		params: Params{
+			text_document: TextDocumentIdentifier{
+				uri: uri
+			}
+		}
+	})
+
+	// Notification must be returned and must contain at least one diagnostic
+	if notif := result {
+		assert notif.method == 'textDocument/publishDiagnostics'
+		assert notif.params.uri == uri
+		assert notif.params.diagnostics.len > 0
+	} else {
+		assert false, 'on_did_open should return a publishDiagnostics notification even for broken files'
+	}
+}
+
 // ============================================================================
 // Tests for on_did_change handler
 // ============================================================================

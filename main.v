@@ -162,7 +162,8 @@ fn (mut app App) handle_stdio_requests(mut reader io.BufferedReader) {
 			}
 			.did_open {
 				log('DID_OPEN')
-				app.on_did_open(request)
+				notification := app.on_did_open(request) or { continue }
+				write_notification(notification)
 			}
 			.initialized, .set_trace, .cancel_request {
 				log('Received and ignored method: ${request.method}')
